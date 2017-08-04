@@ -1,0 +1,196 @@
+#!perl
+
+# DATE
+# VERSION
+
+# IFUNBUILT
+use strict;
+use warnings;
+# END IFUNBUILT
+
+use Getopt::Long::EvenLess;
+
+my %Opts = (
+    config_path => "$ENV{HOME}/.envsetrc",
+    action => 'run',
+);
+my $Config;
+
+sub get_options {
+    GetOptions(
+        'help|h|?' => sub {
+            print <<'_';
+envset - Run a command with sets of environment variables
+
+Usage:
+  envset [OPTS] <SET-SPEC> <CMD> [CMD_ARGS]...
+  envset --list (-l)
+  envset --help (-h, -?)
+  envset --version (-v)
+
+Options:
+  --config-path=file, -c   Specify path for ~/.envsetrc
+
+See documentation for more details.
+_
+                exit 0;
+        },
+        'version|v' => sub {
+# IFUNBUILT
+            no warnings 'once';
+# END IFUNBUILT
+            print "envset version " . ($main::VERSION || "dev") . "\n";
+            exit 0;
+        },
+        'config-path|c=s' => sub {
+            $Opts{config_path} = $_[1];
+        },
+        'list|l' => sub {
+            $Opts{action} = 'list';
+        },
+        'dump|d' => sub {
+            $Opts{action} = 'dump';
+        },
+    );
+}
+
+sub read_config {
+    require Config::IOD::Reader;
+    my $iod = Config::IOD::Reader->new;
+    $Config = $iod->read_file($Opts{config_path});
+}
+
+sub run {
+    read_config();
+    if ($Opts{action} eq 'list') {
+        for (sort keys %$Config) {
+            next if $_ eq 'GLOBAL';
+            print "$_\n";
+        }
+        exit 0;
+    }
+
+    die "envset: Please specify set-spec\n" unless @ARGV;
+    my $spec0 = shift @ARGV;
+    die "envset: Please specify command\n" unless @ARGV;
+
+    my %env;
+    my @spec;
+    while ($spec0 =~ /([+!]?)([^+!]+)/g) {
+        push @spec, [$1, $2];
+    }
+    @spec or die "envset: Invalid set-spec '$spec0'\n";
+    for my $spec (@spec) {
+        my ($sym, $section) = @$spec;
+        my $envs = $Config->{$section}
+            or die "envset: Unknown set '$section'\n";
+        for my $env (keys %$envs) {
+            my $val = $envs->{$env};
+            if (ref $val eq 'ARRAY') {
+                $env{$env} ||= [];
+                push @{ $env{$env} }, @$val;
+            } else {
+                $env{$env} = $val;
+            }
+        }
+    }
+    # stringify
+    for my $env (keys %env) {
+        if (ref $env{$env} eq 'ARRAY') {
+            $env{$env} = join " ", @{ $env{$env} };
+        }
+    }
+
+    if ($Opts{action} eq 'dump') {
+        for my $env (sort keys %env) {
+            print "$env=$env{$env}\n";
+        }
+        exit 0;
+    }
+
+    for my $env (keys %env) {
+        $ENV{$env} = $env{$env};
+    }
+    exec @ARGV;
+}
+
+### main
+
+get_options();
+run();
+
+# ABSTRACT: Run command with sets of environment variables
+# PODNAME:
+
+=head1 SYNOPSIS
+
+List available environment sets defined in F<~/.envsetrc>:
+
+ % envset
+
+Run a command with the C<production> set:
+
+ % envset production -- myscript.pl --script-opt blah --another-opt
+
+Example F<~/.envsetrc>:
+
+ [production]
+ DB_HOST=myapp.example.com
+ DB_NAME=myapp
+ DB_USER=myapp
+ DB_PASS=some-long-pazzword
+
+ [dev]
+ DB_HOST=127.0.0.1
+ DB_NAME=myapp
+ DB_USER=myapp
+ DB_PASS=secret123
+
+ [debug]
+ TRACE=1
+ PERL5OPT=["-d:Confess"] ; enable stack trace
+
+ [lg-cs-firenze]
+ PERL5OPT=["-MLog::ger::Screen::ColorScheme::Firenze"]
+
+ [lg-cs-aspirinc]
+ PERL5OPT=["-MLog::ger::Screen::ColorScheme::AspirinC"]
+
+ [lg-cs-unlike]
+ PERL5OPT=["-MLog::ger::Screen::ColorScheme::Unlike"]
+
+Some more examples of setting environment:
+
+Combine (array values will be joined):
+
+ % envset production+lg-cs-unlike -- myscript.pl ...
+ % envset dev+debug+lg-cs-unlike -- myscript.pl ...
+
+
+=head1 DESCRIPTION
+
+B<Early release. Some aspects might still change.>
+
+
+=head1 TODO
+
+Also look at other locations of F<.envsetrc> like F</etc/envsetrc>,
+C<~/.config/.envsetrc>. Allow multiple C<-c>.
+
+Document the syntax to subtract/undefine.
+
+Tab completion.
+
+
+=head1 FILES
+
+F<~/.envsetrc>
+
+
+=head1 SEE ALSO
+
+A similar npm package L<https://www.npmjs.com/package/envset>. The usage and
+configuration syntax is almost identical with the following differences: 1) our
+startup is a bit better :-) 2) we use L<IOD> for configuration format which is
+INI with some extra features like merging or specifying array/hash; 3) we have
+options like C<--config-path>.
