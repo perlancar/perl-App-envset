@@ -13,6 +13,7 @@ use Getopt::Long::EvenLess;
 my %Opts = (
     config_path => "$ENV{HOME}/.envsetrc",
     action => 'run',
+    variables => {},
 );
 my $Config;
 
@@ -51,12 +52,20 @@ _
         'dump|d' => sub {
             $Opts{action} = 'dump';
         },
+        'variable|V=s' => sub {
+            $_[1] =~ /(.+?)=(.*)/ or
+                die "Invalid syntax in --variable (-V), please use VAR=VALUE\n";
+            $Opts{variables}{$1} = $2;
+        },
     );
 }
 
 sub read_config {
     require Config::IOD::Reader;
-    my $iod = Config::IOD::Reader->new;
+    my $iod = Config::IOD::Reader->new(
+        enable_expr => 1,
+        expr_vars => $Opts{variables},
+    );
     $Config = $iod->read_file($Opts{config_path});
 }
 
@@ -72,7 +81,6 @@ sub run {
 
     die "envset: Please specify set-spec\n" unless @ARGV;
     my $spec0 = shift @ARGV;
-    die "envset: Please specify command\n" unless @ARGV;
 
     my %env;
     my @spec;
@@ -102,12 +110,14 @@ sub run {
     }
 
     if ($Opts{action} eq 'dump') {
+        no warnings 'uninitialized';
         for my $env (sort keys %env) {
             print "$env=$env{$env}\n";
         }
         exit 0;
     }
 
+    die "envset: Please specify command\n" unless @ARGV;
     for my $env (keys %env) {
         $ENV{$env} = $env{$env};
     }
@@ -172,6 +182,68 @@ Combine (array values will be joined):
 B<Early release. Some aspects might still change.>
 
 
+=head1 OPTIONS
+
+=head2 --dump, -d
+
+Instead of running the program, dump the environment variables to be set.
+
+=head2 --list, -l
+
+List all available environment variable sets (~ INI sections) in the
+configuration file.
+
+=head2 --variables, -V
+
+Set variable to be used in expression. Expression is a value encoding in L<IOD>
+which allows you to use some simple expressions to calculate the parameter
+value, for example:
+
+ [section]
+ DEBUG=1
+ PERL5OPT=!e "-MLog::ger::Screen::ColorSheme::" . $cs . " -MLog::ger::Output::$out -MSome::Module=debug," . val('DEBUG')
+
+When you run B<envset> with:
+
+ % envset -V cs=AspirinC -V out=Screen section --dump
+
+you'll get:
+
+ DEBUG=1
+ PERL5OPT=-MLog::ger::Screen::ColorScheme::AspirinC -MLog::ger::Output::Screen -MSome::Module=debug,1
+
+To refer to other parameters in the configuration file, use:
+
+ val('DEBUG')
+ val('section2.FOO')
+
+To refer to a variable which will be supplied by C<-V>, use:
+
+ $varname
+
+
+=head1 TIPS
+
+If you just want a shortcut for frequently used environment variables, you can
+use shell aliases, e.g.:
+
+ alias pg=PAGE_RESULT=1
+ alias dbg="LOG=1 TRACE=1 PERL5OPT=-MLog::ger::App"
+
+and then:
+
+ % pg lcpan mods -n cpan rel
+ % dbg myapp --arg1 --arg2 val --arg3
+
+is equivalent to:
+
+ % PAGE_RESULT=1 lcpan mods -n cpan rel
+ % LOG=1 TRACE=1 PERLOPT=-MLog::ger::App dbg myapp --arg1 --arg2 val --arg3
+
+L<envset> gives you dedicated configuration files and the ability to
+add/subtract sets.
+
+
 =head1 TODO
 
 Also look at other locations of F<.envsetrc> like F</etc/envsetrc>,
@@ -192,5 +264,5 @@ F<~/.envsetrc>
 A similar npm package L<https://www.npmjs.com/package/envset>. The usage and
 configuration syntax is almost identical with the following differences: 1) our
 startup is a bit better :-) 2) we use L<IOD> for configuration format which is
-INI with some extra features like merging or specifying array/hash; 3) we have
-options like C<--config-path>.
+INI with some extra features like merging, specifying array/hash, expressions &
+variables; 3) we have options like C<--config-path>.
