@@ -1,4 +1,4 @@
-0.002   2017-08-06 (PERLANCAR)
+0.002   2017-08-06  Released-By: PERLANCAR
 
 	- [Incompatible change] Change union syntax from using '+' to '|'.
 
@@ -7,6 +7,6 @@
         - [doc] Write more documentation.
 
 
-0.001   2017-08-05 (PERLANCAR)
+0.001   2017-08-05  Released-By: PERLANCAR
 
         - First release.
